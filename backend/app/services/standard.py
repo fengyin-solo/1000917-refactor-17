@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.standard_availability import evaluate_availability
 from app.store import store
 
 MODULE = "standard"
@@ -10,6 +11,11 @@ REQUIRED_FIELDS = ["标物编号", "标物名称", "证书编号"]
 STATUS_ORDER = ["合格在用", "即将到期", "已过期", "已消耗"]
 ACTION_RULES = {"开封启用": "合格在用", "标记到期": "即将到期", "登记消耗": "已消耗"}
 NEGATIVE_ACTIONS = []
+
+
+def _with_availability(entry: dict[str, Any]) -> dict[str, Any]:
+    """在返回副本上挂上统一可用性结论，不改动台账里的原始数据。"""
+    return {**entry, "availability": evaluate_availability(entry)}
 
 
 class StandardService:
@@ -28,10 +34,13 @@ class StandardService:
             rows = [row for row in rows if row.get("status") == status]
         total = len(rows)
         start = max(page - 1, 0) * size
-        return rows[start:start + size], total
+        return [_with_availability(row) for row in rows[start:start + size]], total
 
     def get_entry(self, entry_id: int) -> dict[str, Any] | None:
-        return store.find(MODULE, entry_id)
+        entry = store.find(MODULE, entry_id)
+        if entry is None:
+            return None
+        return _with_availability(entry)
 
     def create_entry(self, values: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
         missing = [field for field in REQUIRED_FIELDS if not str(values.get(field) or "").strip()]
@@ -44,7 +53,7 @@ class StandardService:
         entry["pending"] = True
         entry["abnormal"] = False
         rows.append(entry)
-        return entry, []
+        return _with_availability(entry), []
 
     def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
         entry = store.find(MODULE, entry_id)
@@ -58,4 +67,4 @@ class StandardService:
         entry["status"] = target
         entry["pending"] = target != STATUS_ORDER[-1]
         entry["abnormal"] = action in NEGATIVE_ACTIONS
-        return entry, f"标准物质已{action}"
+        return _with_availability(entry), f"标准物质已{action}"
