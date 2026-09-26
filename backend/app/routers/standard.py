@@ -30,6 +30,30 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/available", response_model=PageResult[dict])
+def list_available_entries(
+    keyword: str | None = Query(default=None, description="按标物编号检索"),
+) -> PageResult[dict]:
+    """供检测任务选择标物，只返回统一口径判定为可引用的记录。"""
+    items = service.list_available_entries(keyword=keyword)
+    return PageResult(items=items, total=len(items), page=1, size=max(len(items), 1))
+
+
+@router.get("/availability", response_model=dict)
+def get_availability(
+    code: str = Query(description="按标物编号读取可用性结论"),
+) -> dict[str, Any]:
+    """按标物编号返回台账、详情和任务引用共用的可用性结论。"""
+    return service.availability_for_code(code).to_dict()
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出标准物质清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "standard", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条标准物质明细；不存在时给出可读的错误说明。"""
@@ -56,10 +80,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出标准物质清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "standard", "total": total, "items": items}
